@@ -41,20 +41,41 @@ function seamsImage() {
   const pending = carver.pending();
   if (pending) seams.push(pending);
 
+  const mark = (i) => {
+    const o = i * 4;
+    px[o] = 255;
+    px[o + 1] = 30;
+    px[o + 2] = 40;
+    px[o + 3] = 255;
+  };
+
   for (const { path, horizontal } of seams) {
-    const removed = new Uint8Array(w * h);
-    path.forEach((v, i) => {
-      const at = horizontal ? v * w + i : i * w + v;
-      removed[at] = 1;
-      const o = origin[at] * 4;
-      px[o] = 255;
-      px[o + 1] = 30;
-      px[o + 2] = 40;
-      px[o + 3] = 255;
-    });
-    origin = origin.filter((_, i) => !removed[i]);
-    if (horizontal) h -= 1;
-    else w -= 1;
+    if (horizontal) {
+      // path[x] = row removed in column x: the pixels below it move UP one row,
+      // so the removal has to go column by column (a row-major filter would shift them sideways).
+      const next = new Int32Array(w * (h - 1));
+      for (let x = 0; x < w; x++) {
+        for (let y = 0, k = 0; y < h; y++) {
+          const i = origin[y * w + x];
+          if (y === path[x]) mark(i);
+          else next[k++ * w + x] = i;
+        }
+      }
+      origin = next;
+      h -= 1;
+    } else {
+      // path[y] = column removed in row y: each row just loses one pixel.
+      const next = new Int32Array((w - 1) * h);
+      for (let y = 0, k = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = origin[y * w + x];
+          if (x === path[y]) mark(i);
+          else next[k++] = i;
+        }
+      }
+      origin = next;
+      w -= 1;
+    }
   }
   return px;
 }
