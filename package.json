@@ -1,0 +1,16 @@
+{
+  "name": "seam-api",
+  "version": "1.0.0",
+  "description": "Seam carving engine (DP, Greedy, Graph Cut) compiled to WebAssembly",
+  "type": "module",
+  "main": "web/dist/seam.js",
+  "types": "web/dist/seam.d.ts",
+  "exports": {
+    ".": {
+      "types": "./web/dist/seam.d.ts",
+      "default": "./web/dist/seam.js"
+    },
+    "./worker.js": "./web/worker.js"
+  },
+  "files": ["web/dist/", "web/worker.js"]
+}
