@@ -30,11 +30,13 @@ Programs:
 | `src/viewer_app.cpp/.h` | Desktop viewer UI + rendering (on top of `Carver`) |
 | `src/viewer_main.cpp` | Desktop viewer window, keyboard, mouse, file picker |
 | `web/bindings.cpp` | Emscripten/embind bindings: exposes `Carver` to JavaScript |
-| `web/index.html`, `web/worker.js` | Browser demo; the engine runs in a Web Worker |
+| `web/index.html`, `web/src/` | React visualiser, built with Vite |
+| `web/worker.js` | Web Worker that runs the engine for the visualiser |
 | `web/dist/` | Built `seam.js`, `seam.wasm`, `seam.d.ts` |
+| `Dockerfile` | Builds the WASM module and the visualiser from source, serves them with nginx |
 | `docs/API.md` | JavaScript API guide for the web app |
 | `SeamCarving.sln`, `vs/` | Visual Studio solution, projects, shared property sheets |
-| `.github/workflows/build.yml` | CI: WASM + native builds, Releases, GitHub Pages demo |
+| `.github/workflows/build.yml` | CI: WASM and visualiser builds, Docker image, Releases, GitHub Pages |
 
 ## Build with Visual Studio 2022 (recommended)
 
@@ -77,14 +79,32 @@ Needs [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) (
 emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
 cmake --build build-web
 ```
-This writes `web/dist/seam.js`, `seam.wasm` and `seam.d.ts`. To try the demo, serve the `web` folder
-(`cd web` then `python -m http.server 8000`) and open http://localhost:8000.
-A browser can't load WASM from `file://`.
+This writes `web/dist/seam.js`, `seam.wasm` and `seam.d.ts`.
 
-On GitHub, `.github/workflows/build.yml` does the following:
-- builds the WASM module and the native programs on every push,
+## Run the visualiser
+
+**With Node.js 22** (uses the committed `web/dist/`, so Emscripten isn't needed):
+```
+npm install
+npm run dev
+```
+Then open the URL it prints. `npm run build` writes the static site to `site/`, and `npm run preview` serves it.
+
+**With Docker** (builds everything from source):
+```
+docker build -t seam-carving .
+docker run --rm -p 8080:80 seam-carving
+```
+Then open http://localhost:8080.
+
+## GitHub Actions
+
+On GitHub-hosted runners, `.github/workflows/build.yml` does the following:
+- builds the WASM module and the visualiser on every push and pull request,
+- builds the Docker image, and publishes it to `ghcr.io` except on pull requests,
 - attaches `seam.js` / `seam.wasm` / `seam.d.ts` to a Release when you push a tag such as `v1.0.0`,
-- publishes the demo to GitHub Pages from `main`. This needs a one-time setting: Settings > Pages > Source: GitHub Actions.
+- publishes the visualiser to GitHub Pages from `main`. A repo admin must first set Settings > Pages > Source: GitHub Actions,
+  then add the repository variable `PAGES_ENABLED` = `true`. On a private repo, Pages also needs a paid GitHub plan.
 
 ## seamviewer (step-by-step visualiser)
 ```

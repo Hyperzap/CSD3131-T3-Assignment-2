@@ -4,7 +4,7 @@ The seam carving engine (DP, Greedy, Graph Cut) is the same C++ code as the desk
 WebAssembly. It runs entirely in the browser: no server, and images never leave the user's machine.
 
 - Files: `web/dist/seam.js` + `web/dist/seam.wasm` (ES module), types in `web/seam.d.ts`
-- Working reference app: `web/index.html` + `web/worker.js`
+- Working reference app: `web/src/` + `web/worker.js`
 - Version: `M.version()` → `"1.0.0"`
 
 ## Getting the files
@@ -17,8 +17,7 @@ WebAssembly. It runs entirely in the browser: no server, and images never leave 
   cmake --build build-web
   ```
   This writes `web/dist/seam.js`, `seam.wasm` and `seam.d.ts`.
-- **Run the demo:** WASM can't load from `file://`, so serve the folder:
-  `cd web` then `python -m http.server 8000`, and open http://localhost:8000.
+- **Run the demo:** `npm install`, then `npm run dev`, and open the URL it prints.
 
 ## Quick start
 
@@ -104,7 +103,7 @@ Every array returned is a **copy**, so it's safe to keep, modify or transfer to 
 
 Graph Cut takes **seconds per seam** (it solves a max-flow problem each time; about 1000× slower than DP). On the
 main thread that freezes the page. `web/worker.js` wraps the Carver in a worker with a small message protocol, and
-`web/index.html` shows how to use it:
+`web/src/useCarver.js` shows how to use it:
 
 ```js
 const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
@@ -112,12 +111,12 @@ worker.postMessage({ id: 1, cmd: 'load', width, height, rgba }, [rgba.buffer]);
 worker.postMessage({ id: 2, cmd: 'forward', algo: 'dp', horizontal: false });
 worker.onmessage = (e) => {
   const { id, ok, error, state } = e.data;
-  // state = { width, height, originalWidth, originalHeight, stepsRemoved, pending, rgba, energy }
+  // state = { width, height, originalWidth, originalHeight, stepsRemoved, pending, rgba, energy, seams }
 };
 ```
 
 Commands: `load`, `forward`, `back`, `reset`, `discard`, `carve`, `state`. Add `withEnergy: true` to any command to also get
-the energy image. See the comment at the top of `worker.js`.
+the energy image, or `withSeams: true` to get the original image with every seam drawn in red. See the comment at the top of `worker.js`.
 
 ## Limits and performance
 
