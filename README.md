@@ -1,4 +1,4 @@
-# seam-api
+# Seam Carving (CSD3131 Assignment 2)
 
 A seam carving engine (content-aware image resizing) compiled to WebAssembly. It offers three seam finders
 (**DP**, **Greedy**, **Graph Cut**), step-by-step find/remove with undo, and the energy map.
