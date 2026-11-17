@@ -16,7 +16,7 @@ Version **1.0.0**.
 | `src/` | The C++ engine: energy map, DP / Greedy / Graph Cut seam finders, step engine (`carver.h`) |
 | `web/bindings.cpp` | Exposes the C++ `Carver` to JavaScript (Emscripten embind) |
 | `CMakeLists.txt` | Builds `web/dist/` from the C++ source (see "Building from source") |
-| `ci/build.yml` or `.github/workflows/build.yml` | GitHub Actions: rebuilds the module on every push and attaches it to tagged Releases |
+| `ci/build.yml` or `.github/workflows/build.yml` | GitHub Actions: rebuilds the module on every push |
 | `package.json` | So you can `npm install` this repo and import it by name |
 
 ## Setup
@@ -169,6 +169,15 @@ Measured per seam on a 590×400 photo in Chromium:
 - **Downscale large images before loading,** e.g. to 600–800 px on the longest side. Graph Cut gets much slower as the image grows.
 - **Single-threaded:** the engine runs one computation at a time and doesn't use multiple cores.
 
+## Run the whole app with Docker
+
+To run the visualiser locally without installing Node or Emscripten, use Docker. It builds everything from source,
+including the C++ engine:
+```
+docker compose up --build
+```
+Then open http://localhost:8080. Stop it with `docker compose down`.
+
 ## Building from source
 
 You only need this to change the engine; `web/dist/` is already built.
@@ -181,8 +190,7 @@ You only need this to change the engine; `web/dist/` is already built.
    ```
 3. That rewrites `web/dist/seam.js`, `seam.wasm` and `seam.d.ts`. Commit all three together.
 
-CI does the same on GitHub: every push builds the module (Actions → `build` → artifact `seam-wasm`), and pushing a tag
-such as `v1.1.0` attaches the files to a GitHub Release.
+CI does the same on GitHub: every push builds the module (Actions → `build` → artifact `seam-wasm`).
 
 The C++ engine in brief:
 
