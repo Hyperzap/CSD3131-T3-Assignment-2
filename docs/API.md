@@ -9,8 +9,7 @@ WebAssembly. It runs entirely in the browser: no server, and images never leave 
 
 ## Getting the files
 
-- **Already built:** `web/dist/` is committed, and every push also builds it in CI (Actions → `web` → artifact `seam-wasm`).
-  Tagged versions (`v1.0.0`, …) attach the files to the GitHub Release.
+- **Already built:** `web/dist/` is committed, and every push also builds it in CI (Actions → `build` → artifact `seam-wasm`).
 - **Build it yourself** (needs [Emscripten](https://emscripten.org/docs/getting_started/downloads.html)):
   ```
   emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release

@@ -157,6 +157,17 @@ label {
   color: var(--muted);
 }
 
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: var(--accent);
+}
+
 .label-row {
   display: flex;
   justify-content: space-between;
@@ -212,7 +223,8 @@ button.primary:hover:not(:disabled) {
 }
 
 button:disabled,
-select:disabled {
+select:disabled,
+input:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }

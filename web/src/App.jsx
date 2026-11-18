@@ -7,7 +7,9 @@ const ALGOS = [
   { id: 'greedy', label: 'Greedy' },
   { id: 'graphcut', label: 'Graph Cut (slow)' },
 ];
-const MAX_SIDES = [400, 600, 800];
+// New images are scaled to fit this longest side; the size can then be edited.
+const DEFAULT_MAX_SIDE = 400;
+const MAX_DIM = 2000;
 const VIEWS = [
   { id: 'image', label: 'Image' },
   { id: 'energy', label: 'Energy map' },
@@ -15,13 +17,17 @@ const VIEWS = [
 ];
 const MAX_DELAY = 500;
 
+const clampDim = (n) => Math.min(MAX_DIM, Math.max(1, Math.round(n)));
+
 export default function App() {
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
   const [algo, setAlgo] = useState('dp');
   const [horizontal, setHorizontal] = useState(false);
   const [view, setView] = useState('image');
-  const [maxSide, setMaxSide] = useState(400);
+  const [sizeW, setSizeW] = useState(0);
+  const [sizeH, setSizeH] = useState(0);
+  const [keepAspect, setKeepAspect] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [delay, setDelay] = useState(100);
   const [cols, setCols] = useState(50);
@@ -34,7 +40,7 @@ export default function App() {
 
   // Current settings for the play loop and async handlers, without restarting them.
   const live = useRef({});
-  live.current = { algo, horizontal, view, delay, maxSide };
+  live.current = { algo, horizontal, view, delay };
 
   const { send, busy } = useCarver(() => loadSource(createSampleImage()));
 
@@ -49,12 +55,21 @@ export default function App() {
     [send],
   );
 
-  // Scales a bitmap or canvas down to the size limit and hands its pixels to the worker.
-  function loadSource(source, limit = live.current.maxSide) {
+  // Resizes a bitmap or canvas to `size` (default: fit DEFAULT_MAX_SIDE) and hands its pixels to the worker.
+  function loadSource(source, size) {
     sourceRef.current = source;
-    const scale = Math.min(1, limit / Math.max(source.width, source.height));
-    const width = Math.max(1, Math.round(source.width * scale));
-    const height = Math.max(1, Math.round(source.height * scale));
+    let width;
+    let height;
+    if (size) {
+      width = clampDim(size.width);
+      height = clampDim(size.height);
+    } else {
+      const scale = Math.min(1, DEFAULT_MAX_SIDE / Math.max(source.width, source.height));
+      width = clampDim(source.width * scale);
+      height = clampDim(source.height * scale);
+    }
+    setSizeW(width);
+    setSizeH(height);
     const scratch = document.createElement('canvas');
     scratch.width = width;
     scratch.height = height;
@@ -116,9 +131,32 @@ export default function App() {
     run('state');
   }
 
-  function changeMaxSide(next) {
-    setMaxSide(next);
-    loadSource(sourceRef.current, next);
+  // Editing one side updates the other when proportions are kept.
+  function changeWidth(value) {
+    setSizeW(value);
+    const src = sourceRef.current;
+    if (keepAspect && src && value > 0) setSizeH(clampDim((value * src.height) / src.width));
+  }
+
+  function changeHeight(value) {
+    setSizeH(value);
+    const src = sourceRef.current;
+    if (keepAspect && src && value > 0) setSizeW(clampDim((value * src.width) / src.height));
+  }
+
+  function applySize() {
+    if (!(sizeW > 0 && sizeH > 0)) {
+      setError('Width and height must be at least 1 pixel.');
+      return;
+    }
+    loadSource(sourceRef.current, { width: sizeW, height: sizeH });
+  }
+
+  // The image's own size, scaled down proportionally if it is over MAX_DIM.
+  function originalSize() {
+    const src = sourceRef.current;
+    const scale = Math.min(1, MAX_DIM / Math.max(src.width, src.height));
+    loadSource(src, { width: src.width * scale, height: src.height * scale });
   }
 
   function reset() {
@@ -381,20 +419,47 @@ export default function App() {
             <button type="button" onClick={() => loadSource(createSampleImage())} disabled={controlsLocked}>
               Use sample
             </button>
-            <label>
-              Longest side
-              <select
-                value={maxSide}
-                onChange={(e) => changeMaxSide(Number(e.target.value))}
-                disabled={controlsLocked}
-              >
-                {MAX_SIDES.map((side) => (
-                  <option key={side} value={side}>
-                    {side} px
-                  </option>
-                ))}
-              </select>
+            <div className="row">
+              <label>
+                Width (px)
+                <input
+                  type="number"
+                  min="1"
+                  max={MAX_DIM}
+                  value={sizeW || ''}
+                  onChange={(e) => changeWidth(Number(e.target.value))}
+                  onKeyDown={(e) => e.key === 'Enter' && !controlsLocked && applySize()}
+                  disabled={controlsLocked}
+                />
+              </label>
+              <label>
+                Height (px)
+                <input
+                  type="number"
+                  min="1"
+                  max={MAX_DIM}
+                  value={sizeH || ''}
+                  onChange={(e) => changeHeight(Number(e.target.value))}
+                  onKeyDown={(e) => e.key === 'Enter' && !controlsLocked && applySize()}
+                  disabled={controlsLocked}
+                />
+              </label>
+            </div>
+            <label className="check">
+              <input type="checkbox" checked={keepAspect} onChange={(e) => setKeepAspect(e.target.checked)} />
+              Keep proportions
             </label>
+            <div className="row">
+              <button type="button" onClick={applySize} disabled={controlsLocked}>
+                Apply size
+              </button>
+              <button type="button" onClick={originalSize} disabled={controlsLocked}>
+                Original size
+              </button>
+            </div>
+            <p className="note">
+              Resizing reloads the image and starts carving over. Up to {MAX_DIM} px per side; large images are slow.
+            </p>
             <p className="note">You can also drop an image onto the picture.</p>
           </fieldset>
 
