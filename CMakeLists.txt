@@ -31,7 +31,20 @@ else()
 endif()
 
 if(NOT EMSCRIPTEN)
-    message(STATUS "Not an Emscripten build: only the seamcore library is built. "
+    # Native build: the benchmark suite (bench/bench.cpp). OpenMP is optional; without it the
+    # parallel DP runs on one thread and the benchmark still works.
+    find_package(OpenMP COMPONENTS CXX)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(seamcore PUBLIC OpenMP::OpenMP_CXX)
+    endif()
+    add_executable(seambench bench/bench.cpp)
+    target_link_libraries(seambench PRIVATE seamcore)
+    if(MSVC)
+        target_compile_options(seambench PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(seambench PRIVATE -Wall -Wextra)
+    endif()
+    message(STATUS "Native build: seamcore + seambench (benchmark). "
                    "For seam.js / seam.wasm use: emcmake cmake -S . -B build-web")
     return()
 endif()

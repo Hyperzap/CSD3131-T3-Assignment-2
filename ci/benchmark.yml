@@ -1,0 +1,73 @@
+# Native benchmark suite (bench/bench.cpp).
+# Move this file to .github/workflows/benchmark.yml to enable it.
+#
+# Runs on Linux (GCC) and Windows (MSVC). Each run shows the result tables on the
+# run's Summary page and uploads the CSV files as an artifact. The job fails if any
+# correctness check in the benchmark fails.
+# Note: GitHub's runners are shared machines, so timings vary by roughly 10-20%
+# between runs. Compare ratios (speedups), not absolute milliseconds.
+
+name: Benchmark
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "bench/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/benchmark.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "bench/**"
+      - "CMakeLists.txt"
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "Extra seambench options, e.g. --sizes 512,1024 --seams 100"
+        required: false
+        default: ""
+
+jobs:
+  bench:
+    name: bench (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j
+
+      - name: Run benchmark
+        shell: bash
+        env:
+          EXTRA_ARGS: ${{ github.event.inputs.args }}
+        run: |
+          exe=build/seambench
+          [ -f build/Release/seambench.exe ] && exe=build/Release/seambench.exe
+          "$exe" --out bench-results $EXTRA_ARGS
+
+      - name: Add results to the run summary
+        if: always()
+        shell: bash
+        run: |
+          echo "# ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f bench-results/summary.md ]; then
+            cat bench-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The benchmark did not produce results (see the log)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bench-results-${{ matrix.os }}
+          path: bench-results/
+          if-no-files-found: ignore

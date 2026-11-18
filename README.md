@@ -17,6 +17,8 @@ Version **1.0.0**.
 | `web/bindings.cpp` | Exposes the C++ `Carver` to JavaScript (Emscripten embind) |
 | `CMakeLists.txt` | Builds `web/dist/` from the C++ source (see "Building from source") |
 | `ci/build.yml` or `.github/workflows/build.yml` | GitHub Actions: rebuilds the module on every push and attaches it to tagged Releases |
+| `bench/bench.cpp` | Native benchmark suite: times the seam finders and checks they agree (see "Benchmark") |
+| `.github/workflows/benchmark.yml` | GitHub Actions: runs the benchmark on Linux and Windows |
 | `package.json` | So you can `npm install` this repo and import it by name |
 
 ## Setup
@@ -195,6 +197,47 @@ The C++ engine in brief:
 | `src/seam_graphcut.cpp` | Min-cut / max-flow seam finder (Dinic's algorithm) |
 | `src/carve.cpp` | Removing and re-inserting seams |
 | `src/carver.cpp` | `Carver`: the step engine (find/remove, undo/redo) that the JS API wraps |
+
+## Benchmark
+
+`bench/bench.cpp` is a native benchmark suite for the engine. It needs only a C++17 compiler and CMake (no Emscripten,
+no OpenCV), and does not touch the web API.
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+build/seambench                       # Windows: build\Release\seambench.exe
+```
+
+It takes about 20 seconds and measures:
+
+1. **DP seam finder:** full table vs compact (2 rows + int8 offsets) vs OpenMP threads, with the memory each one needs.
+2. **DP vs Greedy vs Graph Cut:** time per seam and seam cost. Graph Cut is slow, so it is only timed up to 512 px.
+3. **Carving N seams:** recomputing the whole energy map after each seam vs updating it incrementally.
+
+Every variant is also checked against the baseline: same seam, same carved image, Graph Cut's cost and max-flow equal to
+DP's cost, Greedy never cheaper than DP, incremental energy equal to a full recompute, and undo restoring the original.
+If any check fails the program exits with code 2.
+
+Results go to `bench-results/`: `dp.csv`, `algorithms.csv`, `energy.csv` and `summary.md` (the same tables in
+Markdown).
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--out DIR` | `bench-results` | Where to write the results |
+| `--sizes A,B,...` | `256,512,1024,2048` | Longest image side of each test size |
+| `--seams N` | `50` | Seams removed in the carving test |
+| `--graphcut-max S` | `512` | Largest size Graph Cut is timed at |
+| `--image FILE.ppm` | generated scene | Use your own photo (binary PPM; e.g. `magick photo.jpg photo.ppm`) |
+| `--quick` | | Sizes 256 and 512 only, fewer repetitions (a few seconds) |
+
+The default input is a generated landscape (sky, sun, ridges, a striped tower, a little noise), the same on every machine.
+OpenMP is used if the compiler has it (GCC, Clang, MSVC); otherwise the parallel DP just runs on one thread.
+
+On GitHub, `.github/workflows/benchmark.yml` builds and runs the benchmark on Linux (GCC) and Windows (MSVC) whenever
+`src/`, `bench/` or `CMakeLists.txt` change, or from Actions → Benchmark → Run workflow. The tables appear on the run's
+Summary page and the CSVs are attached as an artifact. GitHub's runners are shared, so timings vary between runs:
+compare the speedup ratios rather than the milliseconds.
 
 ## Versions
 
