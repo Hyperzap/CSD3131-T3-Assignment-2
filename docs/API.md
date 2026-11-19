@@ -1,7 +1,7 @@
 # Seam Carving WebAssembly API
 
-The seam carving engine (DP, Greedy, Graph Cut) is the same C++ code as the desktop programs, compiled to
-WebAssembly. It runs entirely in the browser: no server, and images never leave the user's machine.
+The seam carving engine in `src/` (DP, Greedy, Graph Cut) compiled to WebAssembly, as used by the visualiser in
+`web/src/`. It runs entirely in the browser: no server, and images never leave the user's machine.
 
 - Files: `web/dist/seam.js` + `web/dist/seam.wasm` (ES module), types in `web/seam.d.ts`
 - Working reference app: `web/src/` + `web/worker.js`
@@ -16,7 +16,7 @@ WebAssembly. It runs entirely in the browser: no server, and images never leave 
   cmake --build build-web
   ```
   This writes `web/dist/seam.js`, `seam.wasm` and `seam.d.ts`.
-- **Run the demo:** `npm install`, then `npm run dev`, and open the URL it prints.
+- **Run the visualiser:** `npm install`, then `npm run dev`, and open the URL it prints.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ c.delete();                        // REQUIRED: embind objects are not garbage-c
 
 ## The step model
 
-Each seam takes two steps, like the desktop viewer:
+Each seam takes two steps, like the visualiser's **Find seam** / **Remove seam** button:
 
 1. **find**: the next seam is computed and becomes *pending*. Draw it highlighted.
 2. **remove**: the pending seam is removed. The image shrinks by one column (vertical) or one row (horizontal).
@@ -119,13 +119,15 @@ the energy image, or `withSeams: true` to get the original image with every seam
 
 ## Limits and performance
 
-| | Typical time per seam, 600×400, in the browser |
-|---|---|
-| DP | ~5–15 ms |
-| Greedy | < 1 ms |
-| Graph Cut | several seconds |
+Time per seam on a 600×375 photo in Chromium (2-core machine):
 
-- Downscale large images before loading. The demo caps the longest side at 400 / 600 / 800 px.
+| Algorithm | Time per seam |
+|---|---|
+| DP | about 2 ms (up to ~10 ms for the first seams, while the browser warms up) |
+| Greedy | under 0.5 ms |
+| Graph Cut | 5–8 seconds |
+
+- Downscale large images before loading. The visualiser scales new images to 400 px on the longest side.
 - Graph Cut memory grows with the image (about 240k nodes and 2M edges at 600×400). The module grows its memory as needed.
 - The WASM build is single-threaded. OpenMP threads need cross-origin isolation headers that static hosts like GitHub
   Pages can't send, so the parallel DP is a native-only experiment.

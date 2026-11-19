@@ -1,12 +1,11 @@
 #pragma once
 // Minimal image type for the seam carving core.
 //
-// The core has NO OpenCV dependency so it compiles both natively (Visual Studio)
-// and to WebAssembly (Emscripten). Pixels are 8-bit RGBA, row-major, which is
-// exactly the layout of a browser canvas ImageData, so the web build can copy
-// pixels in and out without conversion. Alpha is carried along with the pixels
-// but ignored by the energy function. Native programs convert cv::Mat <-> Image
-// at the edges (see cv_bridge.h).
+// The core has no dependencies, so it compiles both natively (seambench: MSVC,
+// GCC, Clang) and to WebAssembly (Emscripten). Pixels are 8-bit RGBA, row-major,
+// which is exactly the layout of a browser canvas ImageData, so the web build
+// can copy pixels in and out without conversion. Alpha is carried along with
+// the pixels but ignored by the energy function.
 
 #include <cstddef>
 #include <cstdint>

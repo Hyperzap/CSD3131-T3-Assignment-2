@@ -1,6 +1,6 @@
 #pragma once
-// Stateful, step-by-step seam carver: the engine behind both the desktop
-// viewer (seamviewer) and the web build (seam.js / seam.wasm).
+// Stateful, step-by-step seam carver: the engine behind the web build
+// (seam.js / seam.wasm, used by the visualiser) and seambench's undo check.
 //
 // Each seam takes two steps:
 //   1. findSeam():   the next seam is computed and becomes "pending" (highlighted)

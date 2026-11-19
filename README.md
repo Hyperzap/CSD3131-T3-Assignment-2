@@ -1,234 +1,93 @@
 # Seam Carving (CSD3131 Assignment 2)
 
-A seam carving engine (content-aware image resizing) compiled to WebAssembly. It offers three seam finders
-(**DP**, **Greedy**, **Graph Cut**), step-by-step find/remove with undo, and the energy map.
-It runs entirely in the browser: no server needed, and images never leave the user's machine.
+Content-aware image resizing by seam carving (Avidan & Shamir), with three seam finders:
+**dynamic programming**, **greedy** and **graph cut (min-cut / max-flow)**, for both vertical and horizontal seams.
 
-Version **1.0.0**.
+The engine is plain C++17 with no dependencies. It is compiled two ways:
 
-## What's in here
+- to **WebAssembly**, for the **Seam Carving Visualiser**: a browser app that steps through carving one seam at a
+  time (find, then remove, with undo), shows the energy map, and lets you compare the three algorithms on any image;
+- **natively**, for a **benchmark suite** that times every algorithm and variant and checks that they agree.
 
-| Path | What |
-|---|---|
-| `web/dist/seam.js` + `seam.wasm` | The built engine (ES module, default export `createSeamModule`). Ready to use, no build needed |
-| `web/dist/seam.d.ts` | TypeScript types for everything below |
-| `web/worker.js` | Optional: runs the engine in a Web Worker (recommended, see below) |
-| `src/` | The C++ engine: energy map, DP / Greedy / Graph Cut seam finders, step engine (`carver.h`) |
-| `web/bindings.cpp` | Exposes the C++ `Carver` to JavaScript (Emscripten embind) |
-| `CMakeLists.txt` | Builds `web/dist/` from the C++ source (see "Building from source") |
-| `ci/build.yml` or `.github/workflows/build.yml` | GitHub Actions: rebuilds the module on every push and attaches it to tagged Releases |
-| `bench/bench.cpp` | Native benchmark suite: times the seam finders and checks they agree (see "Benchmark") |
-| `.github/workflows/benchmark.yml` | GitHub Actions: runs the benchmark on Linux and Windows |
-| `package.json` | So you can `npm install` this repo and import it by name |
+No image library is used for the carving itself: the energy map, seam search, seam removal and resizing are all
+implemented here (see "Third-party code" below).
 
-## Setup
+## Where each part of the assignment is
 
-**Option A: static files (simplest).** Copy `web/dist/` and `web/worker.js` into your app's static/public directory,
-keeping `worker.js` next to the `dist` folder:
-```
-public/seam/worker.js
-public/seam/dist/seam.js, seam.wasm, seam.d.ts
-```
-```js
-import createSeamModule from '/seam/dist/seam.js';
-```
-
-**Option B: as a package** (Vite, webpack, ...):
-```
-npm install ../path/to/this-repo        (or: npm install github:<user>/<repo>)
-```
-```ts
-import createSeamModule from 'seam-api';   // types come from web/dist/seam.d.ts
-```
-`seam.js` finds `seam.wasm` with `new URL('seam.wasm', import.meta.url)`, which modern bundlers handle automatically.
-For the worker with a bundler, copy `web/worker.js` into your source tree and change its first import to `'seam-api'`.
-
-The page must be served over HTTP (e.g. `npx vite`, or `python -m http.server`). Browsers won't load WASM from `file://`.
-
-## Quick start
-
-```js
-import createSeamModule from '/seam/dist/seam.js';
-
-const M = await createSeamModule();
-const { data, width, height } = ctx.getImageData(0, 0, w, h);   // RGBA bytes from a canvas
-
-const c = new M.Carver(width, height, data);
-
-c.stepForward('dp', false);        // step 1: seam #1 is found  -> c.pending()
-const seam = c.pending();          // { path: Int32Array, cost, findMs, horizontal, algo, index }
-c.stepForward('dp', false);        // step 2: seam #1 is removed -> image is 1 px narrower
-ctx.putImageData(new ImageData(c.image(), c.width(), c.height()), 0, 0);
-
-c.delete();                        // REQUIRED when done: these objects are not garbage-collected
-```
-
-## How stepping works
-
-Each seam takes two steps:
-
-1. **find**: the next seam is computed and becomes *pending*. Draw it highlighted, e.g. in red.
-2. **remove**: the pending seam is removed. The image shrinks by one column (vertical seam) or one row (horizontal seam).
-
-`stepBack()` undoes one step: it un-highlights a pending seam, or puts the last removed seam back (restoring the
-original pixels exactly), which then becomes pending again. Computed seams are cached, so stepping back and forward again
-is instant. Asking for a different algorithm or direction drops the cached steps automatically.
-
-### Seam coordinates (important)
-
-`path` is relative to the image **at that step**, after all earlier removals. That's the image `image()` returns
-while the seam is pending.
-
-| Seam | `path.length` | Meaning |
+| Part | What | Where |
 |---|---|---|
-| vertical (`horizontal: false`) | height | `path[y]` = x of the pixel removed in row y |
-| horizontal (`horizontal: true`) | width | `path[x]` = y of the pixel removed in column x |
+| 1a | Energy map: Sobel `\|Gx\| + \|Gy\|`, summed over R, G, B, replicated borders | `src/energy.cpp` (`computeEnergy`) |
+| 1b | Minimum seam by dynamic programming | `src/seam_dp.cpp` (`findVerticalSeamDP`) |
+| 1b | Horizontal seams (DP on the transposed image / energy map) | `src/carve.cpp` (`carveHorizontal`), `src/carver.cpp` |
+| 1c | Remove the seam and repeat, recomputing the energy | `src/carve.cpp` (`removeVerticalSeam`, `carveVertical`) |
+| 2 | Written answers (seam count, recurrence, divide and conquer for convolution) | Report |
+| 3 | Greedy seam finder | `src/seam_greedy.cpp` |
+| 4 | Graph cut seam finder: min s-t cut solved with Dinic's max-flow | `src/seam_graphcut.cpp` |
+| 5b | Time and space complexity | Report; summary in "How it works" below; comments at the top of each `src/*.cpp` |
+| 5c | Comparison of DP, Greedy and Graph Cut: seams, visual quality, running time | Visualiser (side by side on the same image); benchmark section 2 |
+| 5d | Compact DP table (2 rows + int8 back-pointers, about 12x less memory) | `src/seam_dp_variants.cpp` (`findVerticalSeamDPCompact`) |
+| 5d | Multi-threaded DP (OpenMP) | `src/seam_dp_variants.cpp` (`findVerticalSeamDPParallel`); benchmark section 1 |
+| 5d | Incremental energy update: only about 3 pixels per row recomputed after each seam | `src/energy.cpp` (`updateEnergyAfterSeamRemoval`); benchmark section 3 |
 
-Drawing the pending seam in red:
+## Running the visualiser
 
-```js
-const px = c.image();   // a copy, safe to modify
-const p = c.pending();
-p.path.forEach((v, i) => {
-  const [x, y] = p.horizontal ? [i, v] : [v, i];
-  const o = (y * c.width() + x) * 4;
-  px[o] = 255; px[o + 1] = 0; px[o + 2] = 0; px[o + 3] = 255;
-});
-ctx.putImageData(new ImageData(px, c.width(), c.height()), 0, 0);
+The WebAssembly module is already built (`web/dist/`), so only Node.js is needed.
+
+**With Node.js** (20.19 or newer; 22 recommended):
 ```
-
-## Carver reference
-
-| Method | Returns | Notes |
-|---|---|---|
-| `new M.Carver(w, h, rgba)` | Carver | `rgba` = `Uint8Array` / `Uint8ClampedArray` of length `w*h*4` (e.g. `ImageData.data`), else throws |
-| `width()`, `height()` | number | current size |
-| `originalWidth()`, `originalHeight()` | number | size at load |
-| `findSeam(algo, horizontal)` | boolean | step 1; false if the image is too small (≤ 2 px) |
-| `removeSeam()` | boolean | step 2; false if nothing is pending |
-| `stepForward(algo, horizontal)` | boolean | removes a matching pending seam, otherwise finds the next one |
-| `stepBack()` | boolean | false at the original image |
-| `carve(algo, cols, rows)` | number | removes `cols` vertical then `rows` horizontal seams at once; returns how many |
-| `discardFuture()` | void | drops the pending seam and the redo cache |
-| `reset()` | void | back to the original image |
-| `hasPending()` | boolean | |
-| `pending()` | SeamStep or null | the highlighted seam |
-| `stepsRemoved()` | number | |
-| `step(k)`, `steps()` | SeamStep / SeamStep[] | removed seams, oldest first |
-| `image()` | Uint8ClampedArray | current image, RGBA |
-| `energyImage()` | Uint8ClampedArray | energy map as a grayscale RGBA image, for an "energy view" |
-| `energy()` | Float64Array | raw energy values, row-major |
-| `lastError()` | string | why the last call returned false |
-| `delete()` | void | frees the engine's memory |
-
-`M.version()` returns `"1.0.0"`.
-
-- **Algorithms:** `algo` is `'dp'`, `'greedy'` or `'graphcut'`. An unknown name throws an `Error`.
-- **Returned arrays are copies,** so they're safe to keep, modify or transfer to a worker.
-- **DP and Graph Cut find the optimal (cheapest) seam;** Greedy is fast but not optimal.
-
-## Use a Web Worker (recommended)
-
-Graph Cut takes **seconds per seam**. On the main thread that freezes the page, so `worker.js` runs the engine in a
-worker instead:
-
-```js
-const worker = new Worker(new URL('/seam/worker.js', import.meta.url), { type: 'module' });
-
-worker.postMessage({ id: 1, cmd: 'load', width, height, rgba }, [rgba.buffer]);
-worker.postMessage({ id: 2, cmd: 'forward', algo: 'dp', horizontal: false });
-
-worker.onmessage = (e) => {
-  const { id, ok, error, state } = e.data;
-  // state = { width, height, originalWidth, originalHeight, stepsRemoved, pending, rgba, energy }
-};
+npm install
+npm run dev
 ```
+Then open the URL it prints (usually http://localhost:5173). `npm run build` writes a static copy of the site to
+`site/`.
 
-| Command | Extra fields | Does |
-|---|---|---|
-| `load` | `width, height, rgba` | starts over with a new image |
-| `forward` | `algo, horizontal` | finds the next seam, or removes the pending one |
-| `back` | none | undoes one step |
-| `reset` | none | back to the original image |
-| `discard` | none | drops the pending seam and the redo cache |
-| `carve` | `algo, cols, rows` | removes many seams at once |
-| `state` | none | just reports the current state |
-
-Add `withEnergy: true` to any command to also get `state.energy` (grayscale RGBA).
-
-Each reply carries the same `id` as its command. The worker handles one command at a time, in order.
-
-## Performance and limits
-
-Measured per seam on a 590×400 photo in Chromium:
-
-| Algorithm | Time per seam |
-|---|---|
-| DP | ~2 ms |
-| Greedy | ~0.04 ms |
-| Graph Cut | several seconds (~10 s on a slow machine) |
-
-- **Downscale large images before loading,** e.g. to 600–800 px on the longest side. Graph Cut gets much slower as the image grows.
-- **Single-threaded:** the engine runs one computation at a time and doesn't use multiple cores.
-
-## Run the whole app with Docker
-
-To run the visualiser locally without installing Node or Emscripten, use Docker. It builds everything from source,
-including the C++ engine:
+**Or with Docker**, which builds everything from source, including the C++ engine:
 ```
 docker compose up --build
 ```
 Then open http://localhost:8080. Stop it with `docker compose down`.
 
-## Building from source
+**Using it.** The visualiser opens with a generated sample picture. Use **Open image…** (or drop a file onto the
+picture) to load your own; test photos are in `testimages/test_photos.zip`. Each press of **Find seam →** /
+**Remove seam →** is one step: the next seam is found and drawn in red, then removed. **← Back** undoes a step exactly.
+Choose the algorithm and the direction (vertical seams make the image narrower, horizontal seams make it shorter) under
+Settings, and switch the view between the image, its energy map, and every removed seam drawn on the original.
+**Remove many at once** carves several seams in one go. New images are scaled to 400 px on their longest side, because
+Graph Cut takes seconds per seam on larger ones; set another size (up to 2000 px) under Image.
 
-You only need this to change the engine; `web/dist/` is already built.
-
-1. Install [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) (emsdk).
-2. Build:
-   ```
-   emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
-   cmake --build build-web
-   ```
-3. That rewrites `web/dist/seam.js`, `seam.wasm` and `seam.d.ts`. Commit all three together.
-
-CI does the same on GitHub: every push builds the module (Actions → `build` → artifact `seam-wasm`).
-
-The C++ engine in brief:
-
-| File | Contents |
+| Key | Action |
 |---|---|
-| `src/image.h` | RGBA image type (same layout as canvas `ImageData`) |
-| `src/energy.cpp` | Sobel energy map, plus the incremental update after a seam is removed |
-| `src/seam_dp.cpp`, `seam_dp_variants.cpp` | Dynamic programming seam finder (full table and memory-compact versions) |
-| `src/seam_greedy.cpp` | Greedy seam finder |
-| `src/seam_graphcut.cpp` | Min-cut / max-flow seam finder (Dinic's algorithm) |
-| `src/carve.cpp` | Removing and re-inserting seams |
-| `src/carver.cpp` | `Carver`: the step engine (find/remove, undo/redo) that the JS API wraps |
+| → / ← | step forward / back |
+| Space | play / pause |
+| A | next algorithm |
+| D | toggle direction |
+| E | next view |
+| R | reset |
+| + / - | faster / slower playback |
+| O | open an image |
 
-## Benchmark
+The engine runs in a Web Worker (`web/worker.js`), so the page stays responsive while Graph Cut works.
 
-`bench/bench.cpp` is a native benchmark suite for the engine. It needs only a C++17 compiler and CMake (no Emscripten,
-no OpenCV), and does not touch the web API.
+## Running the benchmark
 
+Needs a C++17 compiler and CMake 3.16 or newer (Visual Studio 2022, GCC or Clang). No Emscripten, no OpenCV.
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 build/seambench                       # Windows: build\Release\seambench.exe
 ```
 
-It takes about 20 seconds and measures:
+It takes about 20 seconds and prints three tables, also written to `bench-results/` as CSV files and a Markdown
+`summary.md`:
 
-1. **DP seam finder:** full table vs compact (2 rows + int8 offsets) vs OpenMP threads, with the memory each one needs.
-2. **DP vs Greedy vs Graph Cut:** time per seam and seam cost. Graph Cut is slow, so it is only timed up to 512 px.
+1. **DP seam finder:** full table vs compact vs OpenMP with 1, 2, 4, … threads, with the memory each one needs.
+2. **DP vs Greedy vs Graph Cut:** time per seam and seam cost. Graph Cut is only timed up to 512 px because it is slow.
 3. **Carving N seams:** recomputing the whole energy map after each seam vs updating it incrementally.
 
-Every variant is also checked against the baseline: same seam, same carved image, Graph Cut's cost and max-flow equal to
-DP's cost, Greedy never cheaper than DP, incremental energy equal to a full recompute, and undo restoring the original.
-If any check fails the program exits with code 2.
-
-Results go to `bench-results/`: `dp.csv`, `algorithms.csv`, `energy.csv` and `summary.md` (the same tables in
-Markdown).
+Every timed variant is first checked against the baseline: the same seam as the full-table DP, the same carved image,
+Graph Cut's seam cost and max-flow value both equal to DP's seam cost, Greedy never cheaper than DP, incremental energy
+equal to a full recompute after every seam, and undo restoring the original image exactly. If any check fails, the
+program says which and exits with code 2.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -236,18 +95,82 @@ Markdown).
 | `--sizes A,B,...` | `256,512,1024,2048` | Longest image side of each test size |
 | `--seams N` | `50` | Seams removed in the carving test |
 | `--graphcut-max S` | `512` | Largest size Graph Cut is timed at |
-| `--image FILE.ppm` | generated scene | Use your own photo (binary PPM; e.g. `magick photo.jpg photo.ppm`) |
+| `--image FILE.ppm` | generated scene | Use your own photo (binary PPM, e.g. `magick photo.jpg photo.ppm`) |
 | `--quick` | | Sizes 256 and 512 only, fewer repetitions (a few seconds) |
 
-The default input is a generated landscape (sky, sun, ridges, a striped tower, a little noise), the same on every machine.
-OpenMP is used if the compiler has it (GCC, Clang, MSVC); otherwise the parallel DP just runs on one thread.
+The default input is a generated landscape (sky, sun, ridges, a striped tower, a little noise), the same on every
+machine. OpenMP is used when the compiler supports it; otherwise the parallel DP runs on one thread.
 
-On GitHub, `.github/workflows/benchmark.yml` builds and runs the benchmark on Linux (GCC) and Windows (MSVC) whenever
-`src/`, `bench/` or `CMakeLists.txt` change, or from Actions → Benchmark → Run workflow. The tables appear on the run's
-Summary page and the CSVs are attached as an artifact. GitHub's runners are shared, so timings vary between runs:
-compare the speedup ratios rather than the milliseconds.
+On GitHub, `.github/workflows/benchmark.yml` runs the benchmark on Linux (GCC) and Windows (MSVC) and shows the tables
+on each run's Summary page.
 
-## Versions
+## How it works
 
-The API follows semantic versioning (`M.version()`, and `version` in `package.json`). A change to method names, return
-shapes or the `path` convention bumps the major version.
+For an image with **m** rows and **n** columns (one vertical seam):
+
+| Step | Method | Time | Extra space |
+|---|---|---|---|
+| Energy map | 3x3 Sobel in x and y, `\|Gx\| + \|Gy\|` summed over R, G, B. Integer arithmetic, so energies are exact | O(mn) | O(mn) |
+| DP | `M[i][j] = e[i][j] + min(M[i-1][j-1], M[i-1][j], M[i-1][j+1])`, then backtrack from the smallest `M[m-1][j]` | O(mn) | O(mn): costs + back-pointers |
+| Compact DP | Keeps only two cost rows and an int8 offset (-1, 0, +1) per pixel for backtracking | O(mn) | 2n doubles + mn bytes |
+| Parallel DP | Each row's n cells are independent, so they are split across threads, with a barrier between rows | O(mn / p) + m barriers | as compact DP |
+| Greedy | Start at the cheapest pixel of the first row, then step to the cheapest of the 3 pixels below | O(m + n) | O(m) |
+| Graph Cut | One node per pixel; source to the first column, a dummy last column to the sink; each pixel's edge to its right neighbour has capacity e[i][j]; infinite backward and diagonal edges force one connected cut per row. Max-flow with Dinic's algorithm, then the seam is the rightmost source-side pixel in each row | O(V²E) worst case, V ≈ mn, E ≈ 4mn | O(mn) |
+| Remove seam | Shift each row left past the seam pixel | O(mn) | O(mn) new image |
+| Incremental energy | After a removal, only pixels whose 3x3 neighbourhood changed are recomputed: columns [min(s) − 1, max(s)] of each row, about 3 per row | O(m) recomputed + O(mn) shift | none |
+
+Carving k seams costs k times one seam. **Horizontal seams** use the same code on the transposed image; the energy of
+the transposed image is the transposed energy map, so it is not recomputed.
+
+All three DP versions use the same tie-breaking (straight down, then left, then right), so they return identical
+seams. Graph Cut returns a seam of exactly the same cost, which the benchmark checks against the max-flow value
+(max-flow = min-cut = seam cost). Greedy only looks one row ahead, so its seams cost more (typically 20–30% more on
+the test scene) and cut through objects more often.
+
+The **step engine** (`src/carver.cpp`) powers the visualiser. It keeps the removed pixels of each seam, so undo puts
+them back exactly, and caches computed steps so redo is instant.
+
+## Building the WebAssembly module
+
+Only needed after changing the C++ code; `web/dist/` is already built. Install
+[Emscripten](https://emscripten.org/docs/getting_started/downloads.html) (version 3.1.74 is what CI uses), then:
+```
+emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web
+```
+This rewrites `web/dist/seam.js`, `seam.wasm` and `seam.d.ts`. The JavaScript API of the module is documented in
+[docs/API.md](docs/API.md).
+
+## Project structure
+
+| Path | Contents |
+|---|---|
+| `src/image.h` | RGBA image type (same layout as a browser canvas's `ImageData`) |
+| `src/seam.h` | Energy map type, seam type, and every seam finder's declaration |
+| `src/energy.cpp` | Sobel energy map, transposes, incremental energy update |
+| `src/seam_dp.cpp` | Dynamic programming seam finder (full table) |
+| `src/seam_dp_variants.cpp` | Compact DP and OpenMP parallel DP |
+| `src/seam_greedy.cpp` | Greedy seam finder |
+| `src/seam_graphcut.cpp` | Graph cut seam finder (Dinic's max-flow) |
+| `src/carve.h`, `carve.cpp` | Removing and re-inserting seams; carving k seams in a loop |
+| `src/carver.h`, `carver.cpp` | `Carver`: the step engine (find / remove, undo / redo) used by the visualiser |
+| `web/bindings.cpp` | Exposes `Carver` to JavaScript (Emscripten embind) |
+| `web/dist/` | The built WebAssembly module (`seam.js`, `seam.wasm`, TypeScript types `seam.d.ts`) |
+| `web/worker.js` | Web Worker that runs the engine off the page's main thread |
+| `web/src/` | The visualiser (React): `App.jsx` user interface, `useCarver.js` worker hook, `sampleImage.js` generated sample picture |
+| `bench/bench.cpp` | Native benchmark suite |
+| `testimages/test_photos.zip` | Test photos, each at original size and scaled to 400 px |
+| `docs/API.md` | JavaScript API of the WebAssembly module |
+| `CMakeLists.txt` | Builds the WebAssembly module (with Emscripten) or the benchmark (native) |
+| `package.json`, `vite.config.js` | Node.js setup for the visualiser |
+| `Dockerfile`, `compose.yaml` | Builds and serves the whole site in Docker |
+| `.github/workflows/` | GitHub Actions: build the module and the site, run the benchmark |
+
+## Third-party code
+
+The brief allows image and math libraries but not existing content-aware resizing functions. This project uses no
+image library at all: images are decoded and drawn by the browser's canvas, and everything else is in `src/`.
+
+- [Emscripten](https://emscripten.org/) compiles the C++ engine to WebAssembly.
+- [React](https://react.dev/) and [Vite](https://vite.dev/) build the visualiser's user interface.
+- [OpenMP](https://www.openmp.org/), from the compiler, provides the threads for the parallel DP (native only).

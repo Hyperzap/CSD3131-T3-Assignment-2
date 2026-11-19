@@ -164,7 +164,7 @@ export default function App() {
     run('reset');
   }
 
-  // Same keys as the desktop seamviewer.
+  // Keyboard shortcuts (listed in the footer).
   useEffect(() => {
     const onKey = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;

@@ -3,7 +3,7 @@
 // Every seam finder takes an EnergyMap and returns a Seam, so DP / Greedy /
 // Graph Cut all plug into the same carving loop (see carve.h).
 //
-// Nothing in the core depends on OpenCV (see image.h).
+// The core has no dependencies (see image.h).
 
 #include "image.h"
 
@@ -31,8 +31,8 @@ using SeamFinder = std::function<Seam(const EnergyMap&)>;
 
 // ---- energy.cpp ----
 // Energy = |dI/dx| + |dI/dy| with 3x3 Sobel kernels and replicated borders,
-// summed over the R, G, B channels. Integer arithmetic: identical to
-// cv::Sobel(CV_32F, BORDER_REPLICATE), which the first version of this code used.
+// summed over the R, G, B channels. Integer arithmetic, so the values are exact
+// (the same as OpenCV's cv::Sobel with BORDER_REPLICATE would give).
 EnergyMap computeEnergy(const Image& img);
 
 // Normalised grayscale visualisation of an energy map (RGBA, for display/reports).
